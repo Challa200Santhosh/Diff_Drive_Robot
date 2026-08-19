@@ -17,7 +17,7 @@ Visualization Tool: RViz2
 
 ### Main ROS 2 Packages Used
 
-- SLAM Toolbox  
+- SLAM Toolbox-
 - Navigation2 (Nav2)  
 - robot_state_publisher  
 - diff_drive_controller  
