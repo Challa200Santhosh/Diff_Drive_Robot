@@ -1,142 +1,84 @@
-# Differential Drive Robot – ROS 2 Mapping and Navigation
+# 🤖 Differential-Drive Robot — ROS 2 SLAM Mapping & Nav2 Autonomous Navigation
 
-## Project Overview
+![ROS 2](https://img.shields.io/badge/ROS-2-22314E)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-E95420)
+![Gazebo](https://img.shields.io/badge/Simulator-Gazebo%20(gz--sim)-orange)
+![Nav2](https://img.shields.io/badge/Navigation-Nav2-blue)
+![SLAM Toolbox](https://img.shields.io/badge/SLAM-slam__toolbox-green)
 
-This project demonstrates a Differential Drive Robot simulated in Gazebo using ROS 2 on Ubuntu 24.04 LTS. The robot is capable of performing 2D mapping using SLAM Toolbox and autonomous navigation using the Navigation2 (Nav2) stack.
+A differential-drive robot (TurtleBot3 Burger model) simulated in **Gazebo** with **ROS 2 on Ubuntu 24.04**. The robot builds a 2D occupancy-grid map with **SLAM Toolbox**, fuses wheel odometry and IMU with an **EKF (robot_localization)**, and navigates autonomously to goals with **Nav2**.
 
-The complete implementation, including launch files, configuration files, and robot description, is available in this repository:
+🎥 **Demos:** [mapping run](robot_mapping_video.mp4) · [autonomous navigation run](Diff-Drive-Robot_navigation.mp4) · 📄 [project report](Diff_Drive_robot_report.pdf)
 
+---
 
+## 🧭 System architecture
 
-## System Environment
-
-Operating System: Ubuntu 24.04 LTS  
-ROS Version: ROS 2  
-Simulation Tool: Gazebo  
-Visualization Tool: RViz2  
-
-### Main ROS 2 Packages Used
-
-- SLAM Toolbox-
-- Navigation2 (Nav2)  
-- robot_state_publisher  
-- diff_drive_controller  
-
-
-## Repository Structure
-
-The repository contains the following major components:
-
-- `src/` – Source packages for the robot and navigation  
-- `launch/` – Launch files for simulation, SLAM, and navigation  
-- `config/` – Parameter files for SLAM and Nav2  
-- `maps/` – Saved occupancy grid maps  
-- `urdf/` – Robot description files  
-
-All implementation files are maintained inside the repository for reproducibility.
-
-
-## Installation and Setup
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/Challa200Santhosh/Diff_Drive_Robot
-cd Diff_Drive_Robot
+```
+ Gazebo (gz-sim) ──ros_gz_bridge──►  /scan  /imu  /robot/odom  /clock  /joint_states
+        ▲                                     │
+        │ /cmd_vel                            ▼
+   twist_mux ◄── Nav2 (/cmd_vel)       imu_filter_madgwick ─► EKF (robot_localization) ─► odom → base_link
+        ▲                                     │
+        └── keyboard (/cmd_vel_key)           ▼
+                                   SLAM Toolbox (online async) ─► /map  ─►  Nav2 (AMCL + planners + controller)
 ```
 
-### 2. Install Dependencies
+## 📦 Packages (`src/`)
+
+| Package | Purpose |
+| :--- | :--- |
+| `tb3_description` | Robot model (URDF/xacro): chassis, wheels, 2D GPU LiDAR on `/scan`, IMU on `/imu` |
+| `robot_gazebo` | Spawns the robot in Gazebo, bridges topics with `ros_gz_bridge`, optional EKF odometry |
+| `robot_custom_localization` | EKF configuration (`ekf.yaml`) fusing `/robot/odom` + filtered IMU |
+| `robot_mapping` | SLAM Toolbox online-async mapping (`mapper_params_online_async.yaml`) + RViz config |
+| `robot_navigation` | Nav2 bringup (localization + navigation), `twist_mux`, saved map `maps/cafe1.yaml` |
+
+## ⚙️ Build
 
 ```bash
+mkdir -p ~/ros2_ws && cd ~/ros2_ws
+git clone https://github.com/Challa200Santhosh/Diff_Drive_Robot.git .
 rosdep install --from-paths src --ignore-src -r -y
-```
-
-### 3. Build the Workspace
-
-```bash
-colcon build
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-
-## Execution Procedure
-
-### Launch Simulation
-
-Launch the robot in Gazebo using the appropriate launch file from the `launch` directory.
+## ▶️ Run
 
 ```bash
-ros2 launch <package_name> <simulation_launch_file>.py
+# 1) Simulation (add use_ekf_odom:=true to use the EKF-fused odometry)
+ros2 launch robot_gazebo gazebo.launch.py use_rviz:=true
+
+# 2) Mapping with SLAM Toolbox, then drive the robot with the keyboard
+ros2 launch robot_mapping mapping.launch.py use_sim_time:=true
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=cmd_vel_key
+
+# 3) Save the map
+ros2 run nav2_map_server map_saver_cli -f src/robot_navigation/maps/my_map
+
+# 4) Autonomous navigation on the saved map (set goals with "Nav2 Goal" in RViz)
+ros2 launch robot_navigation navigation.launch.py use_sim_time:=true
 ```
 
-### Perform SLAM Mapping
+## 🛠️ Problems solved along the way
 
-```bash
-ros2 launch <package_name> <slam_launch_file>.py
-```
+- **TF frame mismatches** between `map`, `odom` and `base_link` — traced from terminal logs and fixed in the configuration files.
+- **Gazebo launch failures, missing dependencies and launch-argument errors** — resolved with `rosdep`, rebuilds and correct workspace sourcing.
+- **Unstable navigation** — improved by tuning parameters in `nav2_params.yaml`.
+- Keyboard and Nav2 velocity commands are arbitrated with **`twist_mux`** priorities.
 
-The robot can be manually controlled to explore the environment and generate a 2D occupancy grid map.
+## ✅ Results
 
-### Save the Map
+- Robot spawns in Gazebo with LiDAR and IMU publishing through the bridge.
+- A 2D occupancy-grid map of the world was built with SLAM Toolbox and saved.
+- Nav2 localized on the saved map and navigated autonomously to several goal poses.
 
-```bash
-ros2 run nav2_map_server map_saver_cli -f <map_name>
-```
+## 🙏 Credits
 
-The map files will be stored in the `maps/` directory.
+The `tb3_description` robot model is based on the ROBOTIS TurtleBot3 description (Apache-2.0, see `src/tb3_description/LICENSE`).
 
-### Run Autonomous Navigation
+## 👤 Author
 
-```bash
-ros2 launch <package_name> <navigation_launch_file>.py
-```
-
-Using RViz2, goal positions can be set, and the robot will navigate autonomously using the Navigation2 stack.
-
-
-## Challenges Encountered
-
-During development, several issues were encountered:
-
-- Missing dependency packages during `colcon build`
-- Command-line syntax errors and incorrect launch arguments
-- Gazebo launch failures
-- TF frame mismatches between `map`, `odom`, and `base_link`
-- Navigation instability due to parameter tuning
-
-
-## Problem Resolution Approach
-
-Most issues were resolved by:
-
-- Installing missing dependencies using `rosdep`
-- Carefully analyzing terminal error logs
-- Rebuilding the workspace multiple times
-- Ensuring correct sourcing of the workspace
-- Verifying file paths and configuration parameters
-- Referring to official ROS 2 documentation
-
-Repeated testing and systematic debugging ensured a stable and functional implementation.
-
-
-## Results
-
-The following objectives were successfully achieved:
-
-- ROS 2 environment configured on Ubuntu 24.04  
-- Robot successfully spawned in Gazebo  
-- Map generated using SLAM Toolbox  
-- Map saved and loaded into Navigation2  
-- Autonomous navigation to multiple goal positions  
-- Organized and reproducible project structure  
-
-
-## Demonstration
-
-A screen recording video demonstrates:
-
-- Robot spawning in Gazebo  
-- Live mapping using SLAM  
-- Map saving  
-- Autonomous navigation to selected goals  
-
+**Challa Santhosh** — Model-Based Design & Embedded AI Engineer  
+[LinkedIn](https://www.linkedin.com/in/challa-santhosh-36693828a/) · [GitHub](https://github.com/Challa200Santhosh) · sschalla10@gmail.com
